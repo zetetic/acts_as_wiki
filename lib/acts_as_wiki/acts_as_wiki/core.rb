@@ -8,7 +8,7 @@ module ActsAsWiki::Markable
 			base.extend ActsAsWiki::Markable::Core::ClassMethods
 			
 			base.class_eval do 
-				before_save :cache_wiki_html
+				before_update :cache_wiki_html
 			end
 			
 			base.initialize_acts_as_wiki_core
@@ -26,6 +26,12 @@ module ActsAsWiki::Markable
 		end
 		
 		module InstanceMethods
+		  
+		  def dump
+		    pp "-" * 8
+		    pp ActsAsWiki::WikiMarkup.all
+		    pp "-" * 8
+		  end
 			
 			def allow_markup!
 				if self.wiki_markups.present?
@@ -34,12 +40,24 @@ module ActsAsWiki::Markable
             wm.destroy if val.blank? # Note: model must be reloaded to detect destroyed associations
           end
 				else
-          self.wiki_markups = wiki_columns.collect do |c|
-            val = self.send(c).to_s
-            ActsAsWiki::WikiMarkup.create!(:markup => val, :column => c.to_s) if val.present?
-          end.compact
+          self.wiki_columns.each do |col|
+            val = self.send(col).to_s
+            if val.present?
+              puts "inserting via allow_markup:#{col}:{val} "
+              self.wiki_markups << ActsAsWiki::WikiMarkup.new(:markup => val, :column => col.to_s)
+              dump
+            end
+          end
 				end
         self.wiki_markups
+			end
+			
+			def clone_markups(cloned_markable)
+        self.wiki_markups.map do |wm|
+          puts "inserting via clone_markups:#{wm.inspect}"
+          cloned_markable.wiki_markups.build(:markup => wm.markup, :column => wm.column)
+          dump
+        end
 			end
 			
 			def dissallow_markup!
@@ -79,8 +97,10 @@ module ActsAsWiki::Markable
 						if self.wiki_markup(col).nil?
               val = self.send(col)
               if val.present?
-                wm = ActsAsWiki::WikiMarkup.create(:markup => val, :column => col.to_s)
+                wm = ActsAsWiki::WikiMarkup.new(:markup => val, :column => col.to_s)
+                puts "inserting via cache_wiki_html:#{wm.inspect}"
                 self.wiki_markups << wm
+                dump
                 self.send "#{col}=", wm.text
               end
 						else
